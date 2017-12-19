@@ -1,0 +1,162 @@
+<html>
+	<head>
+		<title>My first three.js app</title>
+		<style>
+			body { margin: 0; }
+			canvas { width: 100%; height: 100% }
+		</style>
+	</head>
+	<body>
+		<script src="js/THREE/three.min.js"></script>
+		<script src="js/THREE/OrbitControls.js"></script>
+		<script src="js/THREE/OBJLoader.js"></script>
+		<script src="js/THREE/meshLine.js"></script>
+		<script src="js/THREE/FresnelShader.js"></script>
+		<script>
+			let dist = function (pt1, pt2) {
+				return Math.sqrt((pt1[0] - pt2[0])**2 + (pt1[1]-pt2[1])**2 + (pt1[2]-pt2[2])**2);
+			}
+
+			let nearest = function (lastEl, allPts, visitedPts) {
+				bestIdx = -1;
+				bestDist = 10000;
+				for (var i = 0; i < allPts.length/3; i++) {
+						if (visitedPts[i] == 1) continue;
+						if (dist([allPts[3*i], allPts[3*i+1], allPts[3*i+2]], lastEl) < bestDist){
+							bestDist = dist([allPts[3*i],allPts[3*i+1], allPts[3*i+2]], lastEl);
+							bestIdx = i;
+						}
+				}
+				visitedPts[bestIdx] = 1;
+				return bestIdx;
+			}
+			let tsp = function ( pts ) {
+				//get the first point
+				var ordered = new Float32Array(pts.length);
+				ordered[0] = pts[0];
+				ordered[1] = pts[1];
+				ordered[2] = pts[2];
+
+				var visitedPts = new Float32Array(pts.length/3);
+				visitedPts[0] = 1;
+				//find the nearest point to the last point in ordered.
+				for (var i = 1; i < pts.length/3; i ++) {
+					lastEl = [ordered[3*(i-1)], ordered[3*(i-1)+1], ordered[3*(i-1)+2]];
+					nearestIdx = nearest(lastEl, pts, visitedPts);
+					ordered[3*i] = pts[3*nearestIdx];
+					ordered[3*i+1] = pts[3*nearestIdx+1];
+					ordered[3*i+2] = pts[3*nearestIdx+2];
+				}
+				return ordered;
+			}
+
+			var path = "assets/cube/";
+			var format = '.jpg';
+			var urls = [
+					path + 'x' + format, path + 'x' + format,
+					path + 'x' + format, path + 'x' + format,
+					path + 'x' + format, path + 'x' + format
+				];
+
+			var textureCube = new THREE.CubeTextureLoader().load( urls );
+			textureCube.format = THREE.RGBFormat;
+
+
+			var scene = new THREE.Scene();
+			//scene.background = textureCube;
+
+			var camera = new THREE.PerspectiveCamera( 75, window.innerWidth/window.innerHeight, 0.1, 1000 );
+			var controls = new THREE.OrbitControls(camera);
+
+
+			pointLight = new THREE.PointLight(0x2f00c8, 1);
+			pointLight.position.set(-4.50, 2.00, 0.0);
+			scene.add(pointLight);
+			pointLight2 = new THREE.PointLight(0x42F58D, 1);
+			pointLight2.position.set(4.50, 2.00, 0.0);
+			scene.add(pointLight2);
+			directionalLight = new THREE.DirectionalLight(0x2f00c8, 1);
+			directionalLight.position.set(-2.0, 2.0, 3.0);
+			scene.add(directionalLight);
+
+			var renderer = new THREE.WebGLRenderer();
+			renderer.setSize( window.innerWidth, window.innerHeight );
+			document.body.appendChild( renderer.domElement );
+			var startTime;
+			var meshSegments = [];
+			var ready = false;
+
+			var colorList = [
+				new THREE.Color("#ffffff"),
+			];
+
+			fetch("assets/teapot3.json").then(function(response) {
+			  return response.json();
+			}).then(function(myJson) {
+				var json = myJson[15][1][0][1][7][5];
+				var pts = new Float32Array (3*json.length);
+				for (var i = 0; i < json.length; i ++) {
+					pts[3*i] = json[i][0];
+					pts[3*i+1] = json[i][1];
+					pts[3*i+2] = json[i][2];
+				}
+
+				var ordered = tsp (pts);
+				var numberOfSections = 5;
+				var lengthOfSection = (ordered.length/3)/numberOfSections;
+				for (var j=0; j < numberOfSections; j++) {
+				pointArray = [];
+				for (var i = j*lengthOfSection; i < j*lengthOfSection + lengthOfSection; i++){
+					//convert to array of vector3's
+					pointArray.push(new THREE.Vector3(ordered[3*i], ordered[3*i+1], ordered[3*i+2]));
+				}
+				// //Create a closed wavey loop
+				var curve = new THREE.CatmullRomCurve3( pointArray, false );
+				var geometry = new THREE.TubeGeometry( curve, 3500, 0.01, 10, false );
+				var bufferGeometry = new THREE.BufferGeometry().fromGeometry( geometry );
+
+				var material = new THREE.MeshPhongMaterial( { color: 0x5F15FF, specular:0xFFFFFF } );
+				// var shader = THREE.FresnelShader;
+				// var uniforms = THREE.UniformsUtils.clone( shader.uniforms );
+        //
+				// uniforms[ "tCube" ].value = textureCube;
+        //
+				// var material = new THREE.ShaderMaterial( {
+				// 	uniforms: uniforms,
+				// 	vertexShader: shader.vertexShader,
+				// 	fragmentShader: shader.fragmentShader
+				// } );
+				var mesh = new THREE.Mesh( bufferGeometry, material );
+
+				scene.add( mesh );
+				meshSegments.push(mesh);
+			 }
+			 startTime = Date.now();
+			 ready = true;
+			});
+
+			camera.position.z = 5;
+
+			var nEnd = 0
+			var nStep = 50;
+
+			var animate = function () {
+
+				requestAnimationFrame( animate );
+				controls.update();
+				renderer.render(scene, camera);
+				if (ready) {
+					timeDelta = Date.now() - startTime;
+					for (var i = 0; i < meshSegments.length; i++){
+						var nMax = meshSegments[i].geometry.attributes.position.count;
+						//nEnd = ( nEnd + nStep ) % nMax;
+						nEnd = Math.min( nEnd + nStep, nMax );
+						meshSegments[i].geometry.setDrawRange( 0, nEnd );
+					}
+				}
+			};
+
+			animate();
+		</script>
+	</body>
+</html>
