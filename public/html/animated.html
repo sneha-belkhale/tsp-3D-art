@@ -137,8 +137,8 @@
 
 			camera.position.z = 5;
 
-			var nEnd = 0
-			var nStep = 50;
+			var nEnd = [0,0,0,0,0]
+			var nStep = 100;
 
 			var animate = function () {
 
@@ -150,8 +150,8 @@
 					for (var i = 0; i < meshSegments.length; i++){
 						var nMax = meshSegments[i].geometry.attributes.position.count;
 						//nEnd = ( nEnd + nStep ) % nMax;
-						nEnd = Math.min( nEnd + nStep, nMax );
-						meshSegments[i].geometry.setDrawRange( 0, nEnd );
+						nEnd[i] = Math.min( nEnd[i] + nStep, nMax );
+						meshSegments[i].geometry.setDrawRange( 0, nEnd[i] );
 					}
 				}
 			};

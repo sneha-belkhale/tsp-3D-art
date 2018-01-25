@@ -1,0 +1,543 @@
+<html>
+	<head>
+		<title>My first three.js app</title>
+		<style>
+			body { margin: 0; }
+			canvas { width: 100%; height: 100% }
+			#loadingText {
+				font-family:Monospace;
+				font-size:20px;
+				position: absolute;
+				margin: auto;
+				bottom: 50%;
+				color: white;
+				z-index: 8;
+				width: 100%;
+				text-align: center;
+			}
+		</style>
+	</head>
+	<body>
+		<div id="loadingText"> loading... </div>
+
+		<script src="js/THREE/three.min.js"></script>
+		<script src="js/THREE/OrbitControls.js"></script>
+		<script src="js/THREE/OBJLoader.js"></script>
+
+		<script id="vertexShaderRaw" type="x-shader/x-vertex">
+
+		attribute float curvature;
+		uniform float timeDelta;
+		varying float vCurvature;
+		varying vec3 vPos;
+
+		void main() {
+
+			vec3 center = vec3( 0.0, -1.0, 0.0 );
+			vec3 p = position;
+			float distance = length( center - p );
+			vec3 dir = normalize( center - p );
+			float factor = 40.0 / ( distance * distance * distance );
+			if ( factor > 3.0 ) {
+				factor = 0.0;
+			}
+			float period = cos ( 2.0 / (distance) + timeDelta / 350.0 );
+			if ( period > 0.0 ) {
+				period /= 2.2;
+			}
+			p += ( period * factor ) * dir;
+			vec4 modelViewPosition = modelViewMatrix * vec4( p, 1.0 );
+			gl_Position = projectionMatrix * modelViewPosition;
+
+			vPos = position;
+			vCurvature = curvature;
+
+		}
+
+		</script>
+
+		<script id="fragmentShaderRaw" type="x-shader/x-fragment">
+
+		varying vec3 vPos;
+		varying float vCurvature;
+
+		vec4 permute( vec4 x ){ return mod((( x * 34.0 ) + 1.0 ) * x, 289.0); }
+		vec4 taylorInvSqrt( vec4 r ){ return 1.79284291400159 - 0.85373472095314 * r; }
+		vec3 fade( vec3 t ) { return t * t * t * ( t * ( t * 6.0 - 15.0 ) + 10.0 ); }
+
+		float cnoise( vec3 P ){
+		  vec3 Pi0 = floor( P ); // Integer part for indexing
+		  vec3 Pi1 = Pi0 + vec3( 1.0 ); // Integer part + 1
+		  Pi0 = mod( Pi0, 289.0 );
+		  Pi1 = mod( Pi1, 289.0 );
+		  vec3 Pf0 = fract( P ); // Fractional part for interpolation
+		  vec3 Pf1 = Pf0 - vec3( 1.0 ); // Fractional part - 1.0
+		  vec4 ix = vec4( Pi0.x, Pi1.x, Pi0.x, Pi1.x );
+		  vec4 iy = vec4( Pi0.yy, Pi1.yy );
+		  vec4 iz0 = Pi0.zzzz;
+		  vec4 iz1 = Pi1.zzzz;
+
+		  vec4 ixy = permute( permute( ix ) + iy );
+		  vec4 ixy0 = permute( ixy + iz0 );
+		  vec4 ixy1 = permute( ixy + iz1 );
+
+		  vec4 gx0 = ixy0 / 7.0;
+		  vec4 gy0 = fract( floor( gx0 ) / 7.0 ) - 0.5;
+		  gx0 = fract( gx0 );
+		  vec4 gz0 = vec4( 0.5 ) - abs( gx0 ) - abs( gy0 );
+		  vec4 sz0 = step( gz0, vec4( 0.0 ));
+		  gx0 -= sz0 * ( step( 0.0, gx0 ) - 0.5 );
+		  gy0 -= sz0 * ( step( 0.0, gy0 ) - 0.5 );
+
+		  vec4 gx1 = ixy1 / 7.0;
+		  vec4 gy1 = fract( floor( gx1 ) / 7.0 ) - 0.5;
+		  gx1 = fract( gx1 );
+		  vec4 gz1 = vec4( 0.5 ) - abs( gx1 ) - abs( gy1 );
+		  vec4 sz1 = step( gz1, vec4( 0.0 ) );
+		  gx1 -= sz1 * ( step( 0.0, gx1 ) - 0.5 );
+		  gy1 -= sz1 * ( step( 0.0, gy1 ) - 0.5 );
+
+		  vec3 g000 = vec3( gx0.x, gy0.x, gz0.x );
+		  vec3 g100 = vec3( gx0.y, gy0.y, gz0.y );
+		  vec3 g010 = vec3( gx0.z, gy0.z, gz0.z );
+		  vec3 g110 = vec3( gx0.w, gy0.w, gz0.w );
+		  vec3 g001 = vec3( gx1.x, gy1.x, gz1.x );
+		  vec3 g101 = vec3( gx1.y, gy1.y, gz1.y );
+		  vec3 g011 = vec3( gx1.z, gy1.z, gz1.z );
+		  vec3 g111 = vec3( gx1.w, gy1.w, gz1.w );
+
+		  vec4 norm0 = taylorInvSqrt( vec4( dot( g000, g000 ), dot( g010, g010 ), dot( g100, g100 ), dot( g110, g110 ) ) );
+		  g000 *= norm0.x;
+		  g010 *= norm0.y;
+		  g100 *= norm0.z;
+		  g110 *= norm0.w;
+		  vec4 norm1 = taylorInvSqrt( vec4( dot( g001, g001 ), dot( g011, g011 ), dot( g101, g101 ), dot( g111, g111 ) ) );
+		  g001 *= norm1.x;
+		  g011 *= norm1.y;
+		  g101 *= norm1.z;
+		  g111 *= norm1.w;
+
+		  float n000 = dot( g000, Pf0 );
+		  float n100 = dot( g100, vec3( Pf1.x, Pf0.yz ) );
+		  float n010 = dot( g010, vec3( Pf0.x, Pf1.y, Pf0.z ) );
+		  float n110 = dot( g110, vec3( Pf1.xy, Pf0.z ) );
+		  float n001 = dot( g001, vec3( Pf0.xy, Pf1.z ) );
+		  float n101 = dot( g101, vec3( Pf1.x, Pf0.y, Pf1.z ) );
+		  float n011 = dot( g011, vec3( Pf0.x, Pf1.yz ) );
+		  float n111 = dot( g111, Pf1);
+
+		  vec3 fade_xyz = fade( Pf0 );
+		  vec4 n_z = mix( vec4( n000, n100, n010, n110 ), vec4( n001, n101, n011, n111 ), fade_xyz.z );
+		  vec2 n_yz = mix( n_z.xy, n_z.zw, fade_xyz.y );
+		  float n_xyz = mix( n_yz.x, n_yz.y, fade_xyz.x );
+		  return 2.2 * n_xyz;
+
+		}
+
+		void main() {
+			float x = cnoise( 10.0 * vPos );
+			vec4 noiseColor = vec4(0.0, 0.0, x, 0.1 );
+			float noise = pow( (0.5 - vCurvature) , 1.0 );
+			noiseColor.xyz =  noise * noiseColor.xyz;
+			gl_FragColor = vec4( 0.0, 0.0, vCurvature, 0.5 ) + noiseColor;
+
+		}
+
+		</script>
+
+		<script id="vertexShader" type="x-shader/x-vertex">
+
+		varying vec3 vNormal;
+		varying vec3 vViewPosition;
+		uniform float timeDelta;
+
+		void main() {
+
+			vec3 center = vec3( 0.0, -1.0, 0.0);
+			vec3 p = position;
+			float distance = length( center - p );
+			vec3 dir = normalize( center - p );
+			float factor = 40.0 / ( distance * distance * distance );
+			if ( factor > 3.0 ) {
+				factor = 0.0;
+			}
+			float period = cos( 2.0 / (distance) + timeDelta / 350.0 );
+			if ( period > 0.0 ) {
+				period /= 2.2;
+			}
+			p += ( period * factor ) * dir;
+			vec4 modelViewPosition = modelViewMatrix * vec4( p, 1.0 );
+			gl_Position = projectionMatrix * modelViewPosition;
+			vViewPosition = -modelViewPosition.xyz;
+			vNormal = normalMatrix * normal;
+
+		}
+
+		</script>
+
+		<script>
+
+	    //** TSP ALGORITHM AND HELPER FUNCTIONS **//
+			let dist = function ( pt1, pt2 ) {
+				return Math.sqrt( ( pt1[0] - pt2[0] ) ** 2 + ( pt1[1] - pt2[1] ) ** 2 + ( pt1[2] - pt2[2] ) ** 2 );
+			}
+
+			let nearest = function ( lastEl, allPts, visitedPts ) {
+				bestIdx = -1;
+				bestDist = 10000;
+				for ( var i = 0; i < allPts.length / 3; i++ ) {
+					if ( visitedPts[i] == 1 ) continue;
+					var curDist = dist( [ allPts[3*i], allPts[3*i+1], allPts[3*i+2] ], lastEl );
+					if ( curDist < bestDist ) {
+						bestDist = curDist;
+						bestIdx = i;
+					}
+				}
+				visitedPts[bestIdx] = 1;
+				return bestIdx;
+			}
+
+			let tsp = function ( pts ) {
+				//get the first point
+				var ordered = new Float32Array( pts.length );
+				ordered[0] = pts[0];
+				ordered[1] = pts[1];
+				ordered[2] = pts[2];
+
+				var visitedPts = new Float32Array( pts.length / 3 );
+				visitedPts[0] = 1;
+				//find the nearest point to the last point in ordered.
+				for ( var i = 1; i < pts.length/3; i ++ ) {
+					lastEl = [ ordered[3*(i-1)], ordered[3*(i-1)+1], ordered[3*(i-1)+2] ];
+					nearestIdx = nearest( lastEl, pts, visitedPts );
+					ordered[3*i] = pts[3*nearestIdx];
+					ordered[3*i+1] = pts[3*nearestIdx+1];
+					ordered[3*i+2] = pts[3*nearestIdx+2];
+				}
+				return ordered;
+			}
+
+			//returns average of elements in a dictionary
+			function average( dict ) {
+				var sum = 0;
+				var length = 0;
+				Object.keys( dict ).forEach( function( key ) {
+					sum += dict[ key ];
+					length ++;
+				});
+				return sum / length;
+			}
+
+			//clamp a number between min and max
+			function clamp( number, min, max ) {
+			  return Math.max( min, Math.min( number, max ) );
+			}
+
+			//*** GLOBAL VARIABLES ***//
+			var pointLight;
+			var renderer, scene, camera, controls;
+			var meshSegments = [];
+			var heartMesh;
+			var spline;
+
+			var startTime;
+			var counter = 0;
+			var ready = false;
+
+			function init () {
+				scene = new THREE.Scene();
+				camera = new THREE.PerspectiveCamera( 75, window.innerWidth/window.innerHeight, 0.1, 1000 );
+
+				pointLight = new THREE.PointLight(0xa90f1f, 0.8, 40);
+				scene.add(pointLight);
+
+				rimLight = new THREE.PointLight(0xa90f1f, 0.2, 30);
+				rimLight.position.set(0, 20, -10.0);
+				scene.add(rimLight)
+
+				renderer = new THREE.WebGLRenderer();
+				renderer.setSize( window.innerWidth, window.innerHeight );
+				document.body.appendChild( renderer.domElement );
+				controls = new THREE.OrbitControls(camera, renderer.domElement);
+
+				//#1 load the base obj and calculate curvature
+				var loader = new THREE.OBJLoader();
+				loader.load( 'assets/heart_single_03.obj', function ( object ) {
+					object.traverse( function ( child ) {
+						if ( child instanceof THREE.Mesh ) {
+							bufferGeo = child.geometry;
+							var dict= {};
+							bufferGeo.attributes.position.array.forEach((value, index) => {bufferGeo.attributes.position.array[index] *= 1});
+							for ( var i = 0; i < bufferGeo.attributes.position.count; i+=3 ) {
+								//create a dictionary of every position, and its neighboring positions
+								var array = bufferGeo.attributes.position.array;
+								var normArray = bufferGeo.attributes.normal.array;
+
+								var posA = new THREE.Vector3(array[ 3 * i ], array[ 3 * i + 1 ], array[ 3 * i + 2 ]);
+								var posB = new THREE.Vector3(array[ 3 * ( i + 1 ) ], array[ 3 * ( i + 1 ) + 1 ], array[ 3 * ( i + 1 ) + 2 ]);
+								var posC = new THREE.Vector3(array[ 3 * ( i + 2 ) ], array[ 3 * ( i + 2 ) + 1 ], array[ 3 * ( i + 2 ) + 2 ]);
+
+								var normA = new THREE.Vector3(normArray[ 3 * i ], normArray[ 3 * i + 1 ], normArray[ 3 * i + 2 ]).normalize();
+								var normB = new THREE.Vector3(normArray[ 3 * ( i + 1 ) ], normArray[ 3 * ( i + 1 ) + 1 ], normArray[ 3 * ( i + 1 ) + 2 ]).normalize();
+								var normC = new THREE.Vector3(normArray[ 3 * ( i + 2 ) ], normArray[ 3 * ( i + 2 ) + 1 ], normArray[ 3 * ( i + 2 ) + 2 ]).normalize();
+
+								var strA = posA.toArray().toString();
+								var strB = posB.toArray().toString();
+								var strC = posC.toArray().toString();
+
+								var posB_A = new THREE.Vector3().subVectors( posB, posA );
+								var posB_C = new THREE.Vector3().subVectors( posB, posC );
+								var posC_A = new THREE.Vector3().subVectors( posC, posA );
+
+								var normB_A = new THREE.Vector3().subVectors( normB, normA );
+								var normB_C = new THREE.Vector3().subVectors( normB, normC );
+								var normC_A = new THREE.Vector3().subVectors( normC, normA );
+
+								var b2a = normB.dot( posB_A.normalize() );
+								var b2c = normB.dot( posB_C.normalize() );
+								var c2a = normC.dot( posC_A.normalize() );
+
+								var a2b = -normA.dot( posB_A.normalize() );
+								var c2b = -normC.dot( posB_C.normalize() );
+								var a2c = -normA.dot( posC_A.normalize() );
+
+								if (dict[ strA ] === undefined ) {
+									dict[ strA ] = {};
+								}
+								if (dict[ strB ] === undefined ) {
+									dict[ strB ] = {};
+								}
+								if (dict[ strC ] === undefined ) {
+									dict[ strC ] = {};
+								}
+
+								dict[ strA ][ strB ] = a2b;
+								dict[ strA ][ strC ] = a2c;
+								dict[ strB ][ strA ] = b2a;
+								dict[ strB ][ strC ] = b2c;
+								dict[ strC ][ strA ] = c2a;
+								dict[ strC ][ strB ] = c2b;
+
+							}
+
+							curvatureDict = {};
+							var min = 10, max = 0;
+
+							Object.keys( dict ).forEach( function( key ) {
+								curvatureDict[ key ] = average( dict[ key ] );
+							});
+
+							//smoothing
+							var smoothCurvatureDict  = Object.create(curvatureDict);
+
+							Object.keys( dict ).forEach( function( key ) {
+								var count = 0;
+								var sum = 0;
+								Object.keys( dict[ key ] ).forEach( function( key2 ) {
+									sum += smoothCurvatureDict[ key2 ];
+									count ++;
+								});
+								smoothCurvatureDict[key] = sum / count;
+							});
+
+							curvatureDict = smoothCurvatureDict;
+
+							// fit values to 0 and 1
+							Object.keys( curvatureDict ).forEach( function( key ) {
+								val = Math.abs( curvatureDict[ key ] );
+								if ( val < min ) min = val;
+								if ( val > max ) max = val;
+							});
+
+							var range = ( max - min );
+
+							Object.keys( curvatureDict ).forEach( function( key ) {
+								val = Math.abs( curvatureDict[ key ] );
+								if ( curvatureDict[ key ] < 0 ) {
+									curvatureDict[ key ] = (min - val) / range
+								} else {
+									curvatureDict[ key ] = (val - min) / range;
+								}
+							});
+
+							curvatureAttribute = new Float32Array( bufferGeo.attributes.position.count );
+
+							for ( var i = 0; i < bufferGeo.attributes.position.count; i++ ) {
+
+								array = bufferGeo.attributes.position.array;
+								var pos = new THREE.Vector3( array[ 3 * i ], array[ 3 * i + 1 ], array[ 3 * i + 2 ] );
+								var str = pos.toArray().toString();
+								curvatureAttribute[i] = curvatureDict[ str ];
+							}
+
+							bufferGeo.addAttribute( 'curvature', new THREE.BufferAttribute( curvatureAttribute, 1 ) );
+
+							var mUniforms = ({
+								timeDelta : {type: 'f', value: 0}
+							});
+							var materialRaw = new THREE.ShaderMaterial ({
+								uniforms: mUniforms,
+								vertexShader: document.getElementById( 'vertexShaderRaw' ).textContent,
+								fragmentShader: document.getElementById( 'fragmentShaderRaw' ).textContent,
+								side: THREE.DoubleSide,
+								transparent: true
+							} );
+
+							heartMesh = new THREE.Mesh( bufferGeo, materialRaw );
+							scene.add(heartMesh)
+						}
+					} );
+				} );
+
+				//now load the scattered surface points for the tsp and tube geometry
+		 		fetch( "assets/heart_02.json" ).then( function( response ) {
+			 		return response.json();
+		 		}).then( function( myJson ) {
+					 var json = myJson[15][1][0][1][7][5];
+					 var pts = new Float32Array ( 3 * json.length );
+					 for ( var i = 0; i < json.length; i ++ ) {
+
+						 pts[3*i] = json[i][0];
+						 pts[3*i+1] = json[i][1];
+						 pts[3*i+2] = json[i][2];
+
+				 }
+
+				 var ordered = tsp( pts );
+				 var numberOfSections = 5;
+				 var lengthOfSection = ( ordered.length / 3 ) / numberOfSections;
+
+				 //set up material for all tube geometries
+				 var uniforms = ({
+					 timeDelta : {type: 'f', value: 0},
+					 color : {type: 'c', value: new THREE.Color(0x363636)},
+					 specular : {type: 'c', value: new THREE.Color(0xFFFFFF)},
+				 });
+				 var phongShader = THREE.ShaderLib.phong;
+				 var mUniforms = THREE.UniformsUtils.merge([phongShader.uniforms, uniforms]);
+				 var material = new THREE.ShaderMaterial ({
+					 uniforms : mUniforms,
+					 vertexShader: document.getElementById( 'vertexShader' ).textContent,
+					 fragmentShader: phongShader.fragmentShader,
+					 lights: true,
+					 side : THREE.DoubleSide
+				 });
+				 for ( var j = 0; j < numberOfSections; j++ ) {
+
+					 pointArray = [];
+				   for ( var i = j * lengthOfSection; i < j * lengthOfSection + lengthOfSection; i++ ) {
+						 //convert to array of vector3's
+						 pointArray.push(new THREE.Vector3(ordered[3*i], ordered[3*i+1], ordered[3*i+2]));
+					 }
+					 // //Create a closed wavey loop
+					 var curve = new THREE.CatmullRomCurve3( pointArray, false );
+					 var geometry = new THREE.TubeGeometry( curve, 6600, 0.1, 8, false );
+					 var bufferGeometry = new THREE.BufferGeometry().fromGeometry( geometry );
+					 var mesh = new THREE.Mesh( bufferGeometry, material );
+
+					 scene.add( mesh );
+					 meshSegments.push(mesh);
+
+					}
+					startTime = Date.now();
+					ready = true;
+					var loadingText = document.getElementById("loadingText");
+					loadingText.style.visibility = "hidden";
+				} );
+
+				// camera.position.z = 5.730895057217767;
+				// camera.position.x = 21.94283401508626;
+				// camera.position.y =  5.3220043493535165;
+
+
+				camera.position.x = -2.395858264238528;
+				camera.position.y = 0.20962894182633898;
+				camera.position.z = -4.681532858942278;
+				var numPoints = 500;
+
+		    spline = new THREE.CatmullRomCurve3( [
+			    new THREE.Vector3(-8, 5, 0),
+			    new THREE.Vector3(-8, 0, 5),
+			    new THREE.Vector3(2, 8, -5),
+				  new THREE.Vector3(5, 7, 0),
+				  new THREE.Vector3(7, -4, 3),
+				  new THREE.Vector3(0, -7, 4),
+				  new THREE.Vector3(-7, 0, 0),
+				  new THREE.Vector3(-3, 4, -2),
+					new THREE.Vector3(8, 7, -3),
+					new THREE.Vector3(0, 12, -2),
+				  new THREE.Vector3(2, 6, -1),
+				  new THREE.Vector3(0, -7, 4),
+					new THREE.Vector3(0, -7, 0),
+				  new THREE.Vector3(0, -1, -7),
+					new THREE.Vector3(-8, 5, 0) ] );
+
+				var material = new THREE.LineBasicMaterial({
+		        color: 0xff00f0,
+		    });
+
+		    var geometry = new THREE.Geometry();
+		    var splinePoints = spline.getPoints( numPoints );
+
+		    for ( var i = 0; i < splinePoints.length; i++ ) {
+		        geometry.vertices.push( splinePoints[i] );
+		    }
+
+		    var line = new THREE.Line( geometry, material );
+	      setInterval(moveLight, 60);
+
+				onWindowResize();
+				window.addEventListener( 'resize', onWindowResize, false );
+
+			}
+
+			function onWindowResize( event ) {
+				renderer.setSize( window.innerWidth, window.innerHeight );
+				camera.aspect = window.innerWidth / window.innerHeight;
+				camera.updateProjectionMatrix();
+			}
+
+			function moveLight() {
+				if ( counter <= 1 ) {
+      		pointLight.position.copy( spline.getPointAt(counter) );
+					counter += 0.005;
+				} else {
+					counter = 0;
+				}
+			}
+
+			var nEnd =[];
+			var reverse =[];
+			for ( var i = 0; i < 100; i++ ) {
+				nEnd.push( 0 );
+				reverse.push( false );
+			}
+			var nStep = 100;
+
+			var animate = function () {
+
+				requestAnimationFrame( animate );
+				controls.update();
+				renderer.render(scene, camera);
+
+				if (ready) {
+					timeDelta = Date.now() - startTime;
+					for (var i = 0; i < meshSegments.length; i++){
+						var nMax = meshSegments[i].geometry.attributes.position.count;
+
+						if (reverse[i]){
+							(nEnd[i] - nStep < 0) ? reverse[i] = false : nEnd[i] -= nStep;
+						} else {
+							(nEnd[i] + nStep > nMax) ? reverse[i] = true : nEnd[i] += nStep;
+						}
+						meshSegments[i].geometry.setDrawRange( 0, nEnd[i] );
+						meshSegments[i].material.uniforms.timeDelta.value = timeDelta;
+					}
+					heartMesh.material.uniforms.timeDelta.value = timeDelta;
+				}
+			};
+			init ();
+			animate();
+		</script>
+	</body>
+</html>
