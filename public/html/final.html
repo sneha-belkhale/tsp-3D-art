@@ -1,6 +1,6 @@
 <html>
 	<head>
-		<title>My first three.js app</title>
+		<title>My nth three.js app</title>
 		<style>
 			body { margin: 0; }
 			canvas { width: 100%; height: 100% }
@@ -24,7 +24,7 @@
 		<script src="js/THREE/OrbitControls.js"></script>
 		<script src="js/THREE/OBJLoader.js"></script>
 
-		<script id="vertexShaderRaw" type="x-shader/x-vertex">
+		<script id="vertexShaderRawFinal" type="x-shader/x-vertex">
 
 		attribute float curvature;
 		uniform float timeDelta;
@@ -46,6 +46,38 @@
 				period /= 2.2;
 			}
 			p += ( period * factor ) * dir;
+			vec4 modelViewPosition = modelViewMatrix * vec4( p, 1.0 );
+			gl_Position = projectionMatrix * modelViewPosition;
+
+			vPos = position;
+			vCurvature = curvature;
+
+		}
+
+		</script>
+
+		<script id="vertexShaderRaw" type="x-shader/x-vertex">
+
+		attribute float curvature;
+		uniform float timeDelta;
+		varying float vCurvature;
+		varying vec3 vPos;
+
+		void main() {
+
+			vec3 center = vec3( 0.0, -1.0, 0.0 );
+			vec3 p = position;
+			float distance = length( center - p );
+			vec3 dir = normalize( center - p );
+			//distance factor to only move vertices at the bottom of the heart
+			float factor = 40.0 / ( distance * distance * distance );
+			if ( factor > 3.0 ) {
+				factor = 0.0;
+			}
+			//mod value determines length of segment, first multiplier determines compactness
+			float period = 1.14 * ( 2.0 / (distance) + ( -750.0 + mod( timeDelta, 1500.0 ) ) / 150.0 );
+			float sinVal = - sin ( period )/ period ;
+			p += ( sinVal * factor ) * dir;
 			vec4 modelViewPosition = modelViewMatrix * vec4( p, 1.0 );
 			gl_Position = projectionMatrix * modelViewPosition;
 
@@ -153,19 +185,20 @@
 
 		void main() {
 
-			vec3 center = vec3( 0.0, -1.0, 0.0);
+			vec3 center = vec3( 0.0, -1.0, 0.0 );
 			vec3 p = position;
 			float distance = length( center - p );
 			vec3 dir = normalize( center - p );
+			//distance factor to only move vertices at the bottom of the heart
 			float factor = 40.0 / ( distance * distance * distance );
 			if ( factor > 3.0 ) {
 				factor = 0.0;
 			}
-			float period = cos( 2.0 / (distance) + timeDelta / 350.0 );
-			if ( period > 0.0 ) {
-				period /= 2.2;
-			}
-			p += ( period * factor ) * dir;
+			//mod value determines length of segment, first multiplier determines compactness
+			float period = 1.14 * ( 2.0 / (distance) + ( -750.0 + mod( timeDelta, 1500.0 ) ) / 150.0 );
+			float sinVal = - sin ( period )/ period ;
+			p += ( sinVal * factor ) * dir;
+
 			vec4 modelViewPosition = modelViewMatrix * vec4( p, 1.0 );
 			gl_Position = projectionMatrix * modelViewPosition;
 			vViewPosition = -modelViewPosition.xyz;
